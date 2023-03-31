@@ -59,9 +59,10 @@ float pHVoltage;
 void setup() {
   Serial.begin(9600);
   dhtCaptor.begin();
+  pinMode(LED_BUILTIN, OUTPUT);
 
+  digitalWrite(LED_BUILTIN, HIGH);  
   /*Définition de la zone géographique*/
-  while (!Serial);
   if (!modem.begin(US915)) {
     Serial.println("Echec");
     while (1) {}
@@ -73,6 +74,7 @@ void setup() {
   if(connected == 0)
   {
     Serial.println("Connection effectuée !");
+    digitalWrite(LED_BUILTIN, LOW);
   }
 }
 
@@ -113,6 +115,8 @@ void loop() {
     dataTable[7] = pHVal;
     dataTable[8] = ecVal;
 
+    Serial.println(dataTable[0]);
+
     //Débuter la transmission
     modem.beginPacket();
 
@@ -131,12 +135,21 @@ void loop() {
     //Tester si le message à bien été envoyé
     int erreur = modem.endPacket(true);
     if (erreur > 0)
-    {
+    {      
       Serial.println("Message envoyé !");
+      for(int i = 0; i < 10; i++)
+      {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(100);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(100);
+      }
     } 
       else 
     {
-      Serial.println("Erreur d'envoi");
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(1000);
+      digitalWrite(LED_BUILTIN, LOW);
     }
     memset(dataTable, 0, sizeof(dataTable));
     millisPrecedent = millisActuel;
