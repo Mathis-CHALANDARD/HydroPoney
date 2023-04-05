@@ -27,8 +27,7 @@ LoRaModem modem;
 #pragma region TTN_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 10000;
-float dataTable[9];
+int intervalle = 60000;
 String appEui = "0000000000000063";
 String appKey = "D1B8165EBC2E04DFAC5D023511CFB686";
 #pragma endregion TTN_UTILS
@@ -59,9 +58,10 @@ float pHVoltage;
 void setup() {
   Serial.begin(9600);
   dhtCaptor.begin();
+  pinMode(LED_BUILTIN, OUTPUT);
 
+  digitalWrite(LED_BUILTIN, HIGH);  
   /*Définition de la zone géographique*/
-  while (!Serial);
   if (!modem.begin(US915)) {
     Serial.println("Echec");
     while (1) {}
@@ -73,6 +73,7 @@ void setup() {
   if(connected == 0)
   {
     Serial.println("Connection effectuée !");
+    digitalWrite(LED_BUILTIN, LOW);
   }
 }
 
@@ -102,43 +103,39 @@ void loop() {
     pHVoltage = analogRead(PIN_PH) * 5.0 / 1024;//Récupére le pHVoltage du capteur de pH
     pHVal = 3.5*pHVoltage;
 
-    //TODO : Formater les données a envoyer a TTN
-    dataTable[0] = valLum0;
-    dataTable[1] = valLum1;
-    dataTable[2] = valLum2;
-    dataTable[3] = valLum3;
-    dataTable[4] = lumMoy;
-    dataTable[5] = tempGlobale;
-    dataTable[6] = hum;
-    dataTable[7] = pHVal;
-    dataTable[8] = ecVal;
-
     //Débuter la transmission
     modem.beginPacket();
 
+    //Formatage des données
     String data = String(valLum0) + "/" + String(valLum1) + "/" + String(valLum2) + "/" + String(valLum3) + "/" + String(lumMoy) + "/" + 
                   String(tempGlobale) + "/" + String(hum) + "/" + String(pHVal) + "/" + String(ecVal) + '\n'; 
 
     //Envoie les données
     modem.print(data);
-    // byte * tab = (byte *)dataTable;
-    // for(int i = 0; i < 9; i++){
-    //   Serial.println(tab[i]);
-    // }
-
-
-
+    
     //Tester si le message à bien été envoyé
     int erreur = modem.endPacket(true);
     if (erreur > 0)
-    {
+    {      
       Serial.println("Message envoyé !");
+      #pragma region Debogage
+      for(int i = 0; i < 10; i++)
+      {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(100);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(100);
+      }
+      #pragma endregion
     } 
-      else 
+    else 
     {
-      Serial.println("Erreur d'envoi");
+      #pragma region Debogage
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(1000);
+      digitalWrite(LED_BUILTIN, LOW);
+      #pragma endregion       
     }
-    memset(dataTable, 0, sizeof(dataTable));
     millisPrecedent = millisActuel;
   } 
 }
