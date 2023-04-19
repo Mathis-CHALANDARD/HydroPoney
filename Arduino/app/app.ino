@@ -2,19 +2,25 @@
 #include <MKRWAN.h>/*Librairie pour se connecter au réseau LoRa*/
 #include <DHT.h>/*Librairie pour récuperer les données du capteur de température*/
 #include <DFRobot_EC_NO_EEPROM.h>/*Librairie pour récupérer les données du capteur d'électro-conductivité*/
+#include <Servo.h>/*Libraire pour contrôler les pompes*/
 
 #pragma region DEFINITION_CAPTEURS
 /*Définition des pin de l'Arduino sur lesquelles lire les infos des capteurs*/
-/* SEN0169 */       #define PIN_PH A4
-/* SEN0137 */       #define PIN_TEMPHUM A6
 /* DFR0026 */       #define PIN_LUM0 A0
 /* DFR0026 */       #define PIN_LUM1 A1
 /* DFR0026 */       #define PIN_LUM2 A2
 /* DFR0026 */       #define PIN_LUM3 A3
+/* SEN0169 */       #define PIN_PH A4
+/* SEN0137 */       #define PIN_TEMPHUM A6
 /* DFR0300 */       #define PIN_ELEC A5
-/*DHT 22 (AM2302)*/ #define DHTTYPE DHT22   
+/*DHT 22 (AM2302)*/ #define DHTTYPE DHT22
+/*PERISTALTIC PH+*/ #define POMPEPHPLUS 9
+/*PERISTALTIC PH-*/ #define POMPEPHMOINS 10
+/*DELAI*/           #define DELAIPOMPE 2000   
 DHT dhtCaptor(PIN_TEMPHUM, DHT22); //Objet pour le capteur temperature + humidité
 DFRobot_EC_NO_EEPROM elec; //Objet pour le capteur d'electro-conductivité
+Servo phPlus;
+Servo phMoins;
 #pragma endregion DEFINITION_CAPTEURS
 
 
@@ -52,6 +58,12 @@ float valLum3 = 0;
 //Données relatives au pH de l'eau
 float pHVal;
 float pHVoltage;
+
+//Données liées à la pompe
+int vitessePompe = 50;
+unsigned long timer;
+bool pompePlus = true;
+bool pompeActive = true;
 #pragma endregion CAPTEURS_VAR
 
 
@@ -75,11 +87,13 @@ void setup() {
     Serial.println("Connection effectuée !");
     digitalWrite(LED_BUILTIN, LOW);
   }
+  
+  phPlus.attach(POMPEPHPLUS);
+  phMoins.attach(POMPEPHMOINS);
 }
 
 
 void loop() {
-
   /*Boucle qui s'active toute les 10 secondes. Envoie les données des capteurs à TTN toutes les 10sec*/
   millisActuel = millis();
   if(millisActuel - millisPrecedent >= intervalle){    
@@ -101,7 +115,20 @@ void loop() {
 
     //Récupération des données liées au pH 
     pHVoltage = analogRead(PIN_PH) * 5.0 / 1024;//Récupére le pHVoltage du capteur de pH
-    pHVal = 3.5*pHVoltage;
+    pHVal = 3.5 * pHVoltage;
+
+    if(pHVal < 5.8){
+      //activer la pompe ph+ pendant 2 secondes
+      pompeActive = true;
+      pompePlus = true;
+    }
+
+    if(pHVal > 7.2){
+      //activer la pompe ph- pendant 2 secondes
+      pompeActive = true;
+      pompePlus = false;
+    }
+
 
     //Débuter la transmission
     modem.beginPacket();
@@ -112,7 +139,7 @@ void loop() {
 
     //Envoie les données
     modem.print(data);
-    
+
     //Tester si le message à bien été envoyé
     int erreur = modem.endPacket(true);
     if (erreur > 0)
@@ -137,5 +164,19 @@ void loop() {
       #pragma endregion       
     }
     millisPrecedent = millisActuel;
-  } 
+  }
+  if(!pompeActive) return;
+
+  if(pompePlus){
+    phPlus.write(vitesse);
+    delay(DELAIPOMPE);
+    phPlus.write(0);
+  }
+  else {
+    phMoins.write(vitesse);
+    delay(DELAIPOMPE);
+    phMoins.write(0);
+  }
+
+  pompeActive = false;
 }
