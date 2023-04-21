@@ -1,5 +1,7 @@
 /*Appel des librairies*/
-#include <MKRWAN.h>/*Librairie pour se connecter au réseau LoRa*/
+#include <ArduinoMqttClient.h>
+#include <WiFiNINA.h>
+#include "secrets_arduino.h"
 #include <DHT.h>/*Librairie pour récuperer les données du capteur de température*/
 #include <DFRobot_EC_NO_EEPROM.h>/*Librairie pour récupérer les données du capteur d'électro-conductivité*/
 #include <Servo.h>/*Libraire pour contrôler les pompes*/
@@ -27,16 +29,16 @@ Servo phMoins;
 #pragma region LIB_INIT
 /*Initailisation des variables pour les librairies*/
 //DynamicJsonDocument jsonBuffer(1024);
-LoRaModem modem;
+WiFiClient wifiClient;
 #pragma endregion LIB_INIT
 
-#pragma region TTN_UTILS
+#pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
 int intervalle = 60000;
 String appEui = "0000000000000063";
 String appKey = "D1B8165EBC2E04DFAC5D023511CFB686";
-#pragma endregion TTN_UTILS
+#pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
 //Données relatives à la mesure de la température globale et de l'humidité
@@ -72,21 +74,13 @@ void setup() {
   dhtCaptor.begin();
   pinMode(LED_BUILTIN, OUTPUT);
 
-  digitalWrite(LED_BUILTIN, HIGH);  
-  /*Définition de la zone géographique*/
-  if (!modem.begin(US915)) {
-    Serial.println("Echec");
-    while (1) {}
-  };
-
-  /*Connection à TheThingsNetwork*/
-  int connected = modem.joinOTAA(appEui, appKey);
-
-  if(connected == 0)
-  {
-    Serial.println("Connection effectuée !");
-    digitalWrite(LED_BUILTIN, LOW);
+  while (WiFi.begin("Bob", "wifi1234") != WL_CONNECTED) {
+    // failed, retry
+    delay(3000);
   }
+  Serial.println("Connected");
+
+  digitalWrite(LED_BUILTIN, HIGH);
   
   phPlus.attach(POMPEPHPLUS);
   phMoins.attach(POMPEPHMOINS);
@@ -129,51 +123,26 @@ void loop() {
       pompePlus = false;
     }
 
-
-    //Débuter la transmission
-    modem.beginPacket();
+    //Envoyer les données a mqtt
 
     //Formatage des données
     String data = String(valLum0) + "/" + String(valLum1) + "/" + String(valLum2) + "/" + String(valLum3) + "/" + String(lumMoy) + "/" + 
                   String(tempGlobale) + "/" + String(hum) + "/" + String(pHVal) + "/" + String(ecVal) + '\n'; 
 
-    //Envoie les données
-    modem.print(data);
-
     //Tester si le message à bien été envoyé
-    int erreur = modem.endPacket(true);
-    if (erreur > 0)
-    {      
-      Serial.println("Message envoyé !");
-      #pragma region Debogage
-      for(int i = 0; i < 10; i++)
-      {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(100);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(100);
-      }
-      #pragma endregion
-    } 
-    else 
-    {
-      #pragma region Debogage
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(1000);
-      digitalWrite(LED_BUILTIN, LOW);
-      #pragma endregion       
-    }
     millisPrecedent = millisActuel;
+
+    //recevoir les données
   }
   if(!pompeActive) return;
 
   if(pompePlus){
-    phPlus.write(vitesse);
+    phPlus.write(vitessePompe);
     delay(DELAIPOMPE);
     phPlus.write(0);
   }
   else {
-    phMoins.write(vitesse);
+    phMoins.write(vitessePompe);
     delay(DELAIPOMPE);
     phMoins.write(0);
   }
