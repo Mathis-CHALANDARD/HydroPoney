@@ -25,19 +25,22 @@ Servo phPlus;
 Servo phMoins;
 #pragma endregion DEFINITION_CAPTEURS
 
+enum OperationState{
+  pending,
+  complete,
+  interrupted
+};
+
 
 #pragma region LIB_INIT
-/*Initailisation des variables pour les librairies*/
-//DynamicJsonDocument jsonBuffer(1024);
 WiFiClient wifiClient;
+MqttClient mqttClient(wifiClient);
 #pragma endregion LIB_INIT
 
 #pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 60000;
-String appEui = "0000000000000063";
-String appKey = "D1B8165EBC2E04DFAC5D023511CFB686";
+int intervalle = 600000;
 #pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
@@ -74,13 +77,19 @@ void setup() {
   dhtCaptor.begin();
   pinMode(LED_BUILTIN, OUTPUT);
 
-  while (WiFi.begin("Bob", "wifi1234") != WL_CONNECTED) {
-    // failed, retry
-    delay(3000);
+  while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
+    operation(pending);
   }
-  Serial.println("Connected");
+  operation(complete);
 
-  digitalWrite(LED_BUILTIN, HIGH);
+  if (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
+    operation(pending);
+    while(1);
+  }
+  operation(complete);
+  Serial.println("Connection mqtt réussie");
+  mqttClient.onMessage(onMqttMessage);
+  mqttClient.subscribe(MQTT_RECV);
   
   phPlus.attach(POMPEPHPLUS);
   phMoins.attach(POMPEPHMOINS);
@@ -88,9 +97,25 @@ void setup() {
 
 
 void loop() {
-  /*Boucle qui s'active toute les 10 secondes. Envoie les données des capteurs à TTN toutes les 10sec*/
+
+  if (!mqttClient.connected()) {
+    //No MQTT!
+    while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
+      operation(pending);
+    }
+    Serial.println("Reconnexion wifi réussie");
+    while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
+      operation(pending);
+    }
+    mqttClient.onMessage(onMqttMessage);
+    mqttClient.subscribe(MQTT_RECV);
+    Serial.println("Reconnexion mqtt réussie");
+  }
+
+  mqttClient.poll();
   millisActuel = millis();
-  if(millisActuel - millisPrecedent >= intervalle){    
+  /*Boucle qui s'active toute les 10 secondes. Envoie les données des capteurs à MQTT toutes les 10sec*/
+  if(millisActuel - millisPrecedent >= intervalle){
     //Récupération des données de température globale et d'humidité
     tempGlobale = dhtCaptor.readTemperature(); 
     hum = dhtCaptor.readHumidity();
@@ -123,16 +148,18 @@ void loop() {
       pompePlus = false;
     }
 
-    //Envoyer les données a mqtt
-
     //Formatage des données
     String data = String(valLum0) + "/" + String(valLum1) + "/" + String(valLum2) + "/" + String(valLum3) + "/" + String(lumMoy) + "/" + 
                   String(tempGlobale) + "/" + String(hum) + "/" + String(pHVal) + "/" + String(ecVal) + '\n'; 
 
+    //Envoyer les données a mqtt
+    mqttClient.beginMessage(MQTT_SEND);
+    mqttClient.print(data);
+    mqttClient.endMessage();
+
     //Tester si le message à bien été envoyé
     millisPrecedent = millisActuel;
-
-    //recevoir les données
+    Serial.println("message sent");
   }
   if(!pompeActive) return;
 
@@ -148,4 +175,51 @@ void loop() {
   }
 
   pompeActive = false;
+}
+
+void operation(OperationState state){
+  switch (state) {
+    case pending:
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(1000);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(1000);
+
+    case complete:
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(3000);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(3000);
+
+    case interrupted:
+      for(int i = 0; i < 10; i++){
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(500);
+      }
+  }
+}
+void onMqttMessage(int messageSize){
+  // we received a message, print out the topic and contents
+  Serial.println("Received a message with topic '");
+  Serial.print(mqttClient.messageTopic());
+  Serial.print("', length ");
+  Serial.print(messageSize);
+  Serial.println(" bytes:");
+  char ledOrder[64];
+
+  // use the Stream interface to print the contents
+  int i = 0;
+  while (mqttClient.available()) {
+    ledOrder[i] = (char)mqttClient.read();
+    i++;
+  }
+  
+  if (ledOrder[0] == '1' || strcmp(ledOrder, "LED ON") == 0){
+    Serial.println("LAMPE ALLUMEE");
+  }
+  else{
+    Serial.println("LAMPE ETEINTE");
+  }
 }
