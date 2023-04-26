@@ -18,7 +18,8 @@
 /*DHT 22 (AM2302)*/ #define DHTTYPE DHT22
 /*PERISTALTIC PH+*/ #define POMPEPHPLUS 9
 /*PERISTALTIC PH-*/ #define POMPEPHMOINS 10
-/*DELAI*/           #define DELAIPOMPE 2000   
+/*DELAI*/           #define DELAIPOMPE 2000
+/*RELAY*/           #define RELAY 6
 DHT dhtCaptor(PIN_TEMPHUM, DHT22); //Objet pour le capteur temperature + humidité
 DFRobot_EC_NO_EEPROM elec; //Objet pour le capteur d'electro-conductivité
 Servo phPlus;
@@ -40,7 +41,7 @@ MqttClient mqttClient(wifiClient);
 #pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 600000;
+int intervalle = 1000;
 #pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
@@ -69,6 +70,7 @@ int vitessePompe = 50;
 unsigned long timer;
 bool pompePlus = true;
 bool pompeActive = true;
+bool etatLampe = false;
 #pragma endregion CAPTEURS_VAR
 
 
@@ -80,11 +82,11 @@ void setup() {
   while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
     operation(pending);
   }
+  Serial.println("Connection wifi réussie");
   operation(complete);
 
-  if (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
+  while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
     operation(pending);
-    while(1);
   }
   operation(complete);
   Serial.println("Connection mqtt réussie");
@@ -93,6 +95,7 @@ void setup() {
   
   phPlus.attach(POMPEPHPLUS);
   phMoins.attach(POMPEPHMOINS);
+  pinMode(RELAY, OUTPUT);
 }
 
 
@@ -103,6 +106,7 @@ void loop() {
     while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
       operation(pending);
     }
+
     Serial.println("Reconnexion wifi réussie");
     while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
       operation(pending);
@@ -217,9 +221,12 @@ void onMqttMessage(int messageSize){
   }
   
   if (ledOrder[0] == '1' || strcmp(ledOrder, "LED ON") == 0){
-    Serial.println("LAMPE ALLUMEE");
+    if (etatLampe) return;
+    digitalWrite(RELAY, HIGH);
   }
   else{
-    Serial.println("LAMPE ETEINTE");
+    if (!etatLampe) return;
+    digitalWrite(RELAY, LOW);
   }
+  etatLampe = !etatLampe;
 }
