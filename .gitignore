@@ -84,4 +84,4 @@ lint/outputs/
 lint/tmp/
 # lint/reports/
 
-Arduino/app/secrets_arduino.h
+*.h
