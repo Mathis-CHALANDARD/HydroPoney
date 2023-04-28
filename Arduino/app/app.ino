@@ -153,12 +153,20 @@ void loop() {
     }
 
     //Formatage des données
-    String data = String(valLum0) + "/" + String(valLum1) + "/" + String(valLum2) + "/" + String(valLum3) + "/" + String(lumMoy) + "/" + 
-                  String(tempGlobale) + "/" + String(hum) + "/" + String(pHVal) + "/" + String(ecVal) + '\n'; 
+    String jsonPayload = "{" + String('\n') + "\"lumiere1\": \"" + String(valLum0) + "\","+String('\n') +
+                            "\"lumiere2\": \"" + String(valLum1) + "\","+String('\n') + 
+                            "\"lumiere3\": \"" + String(valLum2) + "\","+String('\n') +
+                            "\"lumiere4\": \"" + String(valLum3) + "\","+String('\n') +
+                            "\"lumiereMoyenne\": \"" + String(lumMoy) + "\","+String('\n') +
+                            "\"temperature\": \"" + String(tempGlobale) + "\","+String('\n') +
+                            "\"humidité\": \"" + String(hum) + "\","+String('\n') +
+                            "\"pH\": \"" + String(pHVal) + "\","+String('\n') +
+                            "\"elec\": \"" + String(ecVal) + "\""+String('\n') +
+                          "}";
 
     //Envoyer les données a mqtt
     mqttClient.beginMessage(MQTT_SEND);
-    mqttClient.print(data);
+    mqttClient.print(jsonPayload);
     mqttClient.endMessage();
 
     //Tester si le message à bien été envoyé
