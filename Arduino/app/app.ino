@@ -41,7 +41,7 @@ MqttClient mqttClient(wifiClient);
 #pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 1000;
+int intervalle = 10000;
 #pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
