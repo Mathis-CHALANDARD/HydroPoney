@@ -19,7 +19,7 @@
 /*PERISTALTIC PH+*/ #define POMPEPHPLUS 9
 /*PERISTALTIC PH-*/ #define POMPEPHMOINS 10
 /*DELAI*/           #define DELAIPOMPE 2000
-/*RELAY*/           #define RELAY 6
+/*RELAY*/           #define RELAY 7
 DHT dhtCaptor(PIN_TEMPHUM, DHT22); //Objet pour le capteur temperature + humidité
 DFRobot_EC_NO_EEPROM elec; //Objet pour le capteur d'electro-conductivité
 Servo phPlus;
