@@ -18,12 +18,14 @@
 /*DHT 22 (AM2302)*/ #define DHTTYPE DHT22
 /*PERISTALTIC PH+*/ #define POMPEPHPLUS 9
 /*PERISTALTIC PH-*/ #define POMPEPHMOINS 10
+/*PERISTALTIC EC*/  #define POMPEEC 11
 /*DELAI*/           #define DELAIPOMPE 2000
 /*RELAY*/           #define RELAY 7
 DHT dhtCaptor(PIN_TEMPHUM, DHT22); //Objet pour le capteur temperature + humidité
 DFRobot_EC_NO_EEPROM elec; //Objet pour le capteur d'electro-conductivité
 Servo phPlus;
 Servo phMoins;
+Servo pompeEc;
 #pragma endregion DEFINITION_CAPTEURS
 
 enum OperationState{
@@ -95,6 +97,7 @@ void setup() {
   
   phPlus.attach(POMPEPHPLUS);
   phMoins.attach(POMPEPHMOINS);
+  pompeEc.attach(POMPEEC);
   pinMode(RELAY, OUTPUT);
 }
 
@@ -172,7 +175,16 @@ void loop() {
     //Tester si le message à bien été envoyé
     millisPrecedent = millisActuel;
     Serial.println("message sent");
+
+    
+    if(ecVal <= 0.6){
+      pompeEc.write(vitessePompe);
+      delay(DELAIPOMPE);
+      pompeEc.write(0);
+    }
+
   }
+
   if(!pompeActive) return;
 
   if(pompePlus){
@@ -230,11 +242,11 @@ void onMqttMessage(int messageSize){
   
   if (ledOrder[0] == '1' || strcmp(ledOrder, "LED ON") == 0){
     if (etatLampe) return;
-    digitalWrite(RELAY, HIGH);
+    digitalWrite(RELAY, LOW);
   }
   else{
     if (!etatLampe) return;
-    digitalWrite(RELAY, LOW);
+    digitalWrite(RELAY, HIGH);
   }
   etatLampe = !etatLampe;
 }
