@@ -1,37 +1,50 @@
 /*Appel des librairies*/
-#include <MKRWAN.h>/*Librairie pour se connecter au réseau LoRa*/
+#include <ArduinoMqttClient.h>
+#include <WiFiNINA.h>
+#include "secrets_arduino.h"
 #include <DHT.h>/*Librairie pour récuperer les données du capteur de température*/
 #include <DFRobot_EC_NO_EEPROM.h>/*Librairie pour récupérer les données du capteur d'électro-conductivité*/
+#include <Servo.h>/*Libraire pour contrôler les pompes*/
 
 #pragma region DEFINITION_CAPTEURS
 /*Définition des pin de l'Arduino sur lesquelles lire les infos des capteurs*/
-/* SEN0169 */       #define PIN_PH A4
-/* SEN0137 */       #define PIN_TEMPHUM A6
 /* DFR0026 */       #define PIN_LUM0 A0
 /* DFR0026 */       #define PIN_LUM1 A1
 /* DFR0026 */       #define PIN_LUM2 A2
 /* DFR0026 */       #define PIN_LUM3 A3
+/* SEN0169 */       #define PIN_PH A4
+/* SEN0137 */       #define PIN_TEMPHUM A6
 /* DFR0300 */       #define PIN_ELEC A5
-/*DHT 22 (AM2302)*/ #define DHTTYPE DHT22   
+/*DHT 22 (AM2302)*/ #define DHTTYPE DHT22
+/*PERISTALTIC PH+*/ #define POMPEPHPLUS 9
+/*PERISTALTIC PH-*/ #define POMPEPHMOINS 10
+/*PERISTALTIC EC*/  #define POMPEEC 11
+/*DELAI*/           #define DELAIPOMPE 2000
+/*RELAY*/           #define RELAY 7
 DHT dhtCaptor(PIN_TEMPHUM, DHT22); //Objet pour le capteur temperature + humidité
 DFRobot_EC_NO_EEPROM elec; //Objet pour le capteur d'electro-conductivité
+Servo phPlus;
+Servo phMoins;
+Servo pompeEc;
 #pragma endregion DEFINITION_CAPTEURS
+
+enum OperationState{
+  pending,
+  complete,
+  interrupted
+};
 
 
 #pragma region LIB_INIT
-/*Initailisation des variables pour les librairies*/
-//DynamicJsonDocument jsonBuffer(1024);
-LoRaModem modem;
+WiFiClient wifiClient;
+MqttClient mqttClient(wifiClient);
 #pragma endregion LIB_INIT
 
-#pragma region TTN_UTILS
+#pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 10000;
-float dataTable[9];
-String appEui = "0000000000000063";
-String appKey = "D1B8165EBC2E04DFAC5D023511CFB686";
-#pragma endregion TTN_UTILS
+int intervalle = 600000;
+#pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
 //Données relatives à la mesure de la température globale et de l'humidité
@@ -53,35 +66,55 @@ float valLum3 = 0;
 //Données relatives au pH de l'eau
 float pHVal;
 float pHVoltage;
+
+//Données liées à la pompe
+int vitessePompe = 50;
+unsigned long timer;
+bool pompePlus = true;
+bool pompeActive = true;
+bool etatLampe = false;
 #pragma endregion CAPTEURS_VAR
 
 
 void setup() {
-  Serial.begin(9600);
   dhtCaptor.begin();
 
-  /*Définition de la zone géographique*/
-  while (!Serial);
-  if (!modem.begin(US915)) {
-    Serial.println("Echec");
-    while (1) {}
-  };
-
-  /*Connection à TheThingsNetwork*/
-  int connected = modem.joinOTAA(appEui, appKey);
-
-  if(connected == 0)
-  {
-    Serial.println("Connection effectuée !");
+  while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
+    delay(3000);
   }
+
+  while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
+    delay(3000);
+  }
+  mqttClient.onMessage(onMqttMessage);
+  mqttClient.subscribe(MQTT_RECV);
+  
+  phPlus.attach(POMPEPHPLUS);
+  phMoins.attach(POMPEPHMOINS);
+  pompeEc.attach(POMPEEC);
+  pinMode(RELAY, OUTPUT);
 }
 
 
 void loop() {
 
-  /*Boucle qui s'active toute les 10 secondes. Envoie les données des capteurs à TTN toutes les 10sec*/
+  if (!mqttClient.connected()) {
+    //No MQTT!
+    while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
+    delay(3000);
+    }
+
+    while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
+    delay(3000);
+    }
+    mqttClient.onMessage(onMqttMessage);
+    mqttClient.subscribe(MQTT_RECV);
+  }
+
+  mqttClient.poll();
   millisActuel = millis();
-  if(millisActuel - millisPrecedent >= intervalle){    
+  /*Boucle qui s'active toute les 10 secondes. Envoie les données des capteurs à MQTT toutes les 10sec*/
+  if(millisActuel - millisPrecedent >= intervalle){
     //Récupération des données de température globale et d'humidité
     tempGlobale = dhtCaptor.readTemperature(); 
     hum = dhtCaptor.readHumidity();
@@ -100,45 +133,81 @@ void loop() {
 
     //Récupération des données liées au pH 
     pHVoltage = analogRead(PIN_PH) * 5.0 / 1024;//Récupére le pHVoltage du capteur de pH
-    pHVal = 3.5*pHVoltage;
+    pHVal = 3.5 * pHVoltage;
 
-    //TODO : Formater les données a envoyer a TTN
-    dataTable[0] = valLum0;
-    dataTable[1] = valLum1;
-    dataTable[2] = valLum2;
-    dataTable[3] = valLum3;
-    dataTable[4] = lumMoy;
-    dataTable[5] = tempGlobale;
-    dataTable[6] = hum;
-    dataTable[7] = pHVal;
-    dataTable[8] = ecVal;
+    if(pHVal < 5.8){
+      //activer la pompe ph+ pendant 2 secondes
+      pompeActive = true;
+      pompePlus = true;
+    }
 
-    //Débuter la transmission
-    modem.beginPacket();
+    if(pHVal > 7.2){
+      //activer la pompe ph- pendant 2 secondes
+      pompeActive = true;
+      pompePlus = false;
+    }
 
-    String data = String(valLum0) + "/" + String(valLum1) + "/" + String(valLum2) + "/" + String(valLum3) + "/" + String(lumMoy) + "/" + 
-                  String(tempGlobale) + "/" + String(hum) + "/" + String(pHVal) + "/" + String(ecVal) + '\n'; 
+    //Formatage des données
+    String jsonPayload = "{" + String('\n') + "\"lumiere1\": \"" + String(valLum0) + "\","+String('\n') +
+                            "\"lumiere2\": \"" + String(valLum1) + "\","+String('\n') + 
+                            "\"lumiere3\": \"" + String(valLum2) + "\","+String('\n') +
+                            "\"lumiere4\": \"" + String(valLum3) + "\","+String('\n') +
+                            "\"lumiereMoyenne\": \"" + String(lumMoy) + "\","+String('\n') +
+                            "\"temperature\": \"" + String(tempGlobale) + "\","+String('\n') +
+                            "\"humidité\": \"" + String(hum) + "\","+String('\n') +
+                            "\"pH\": \"" + String(pHVal) + "\","+String('\n') +
+                            "\"elec\": \"" + String(ecVal) + "\""+String('\n') +
+                          "}";
 
-    //Envoie les données
-    modem.print(data);
-    // byte * tab = (byte *)dataTable;
-    // for(int i = 0; i < 9; i++){
-    //   Serial.println(tab[i]);
-    // }
-
-
+    //Envoyer les données a mqtt
+    mqttClient.beginMessage(MQTT_SEND);
+    mqttClient.print(jsonPayload);
+    mqttClient.endMessage();
 
     //Tester si le message à bien été envoyé
-    int erreur = modem.endPacket(true);
-    if (erreur > 0)
-    {
-      Serial.println("Message envoyé !");
-    } 
-      else 
-    {
-      Serial.println("Erreur d'envoi");
-    }
-    memset(dataTable, 0, sizeof(dataTable));
     millisPrecedent = millisActuel;
-  } 
+    
+    if(ecVal <= 0.6){
+      pompeEc.write(vitessePompe);
+      delay(DELAIPOMPE);
+      pompeEc.write(0);
+    }
+  }
+
+  if(!pompeActive) return;
+
+  if(pompePlus){
+    phPlus.write(vitessePompe);
+    delay(DELAIPOMPE);
+    phPlus.write(0);
+  }
+  else {
+    phMoins.write(vitessePompe);
+    delay(DELAIPOMPE);
+    phMoins.write(0);
+  }
+
+  pompeActive = false;
+}
+
+void onMqttMessage(int messageSize){
+  //Le buffer qui va contenir le message mqtt
+  char ledOrder[64];
+
+  //On récupere le message
+  int i = 0;
+  while (mqttClient.available()) {
+    ledOrder[i] = (char)mqttClient.read();
+    i++;
+  }
+  
+  if (ledOrder[0] == '1' || strcmp(ledOrder, "LED ON") == 0){
+    if (etatLampe) return;
+    digitalWrite(RELAY, LOW);
+  }
+  else{
+    if (!etatLampe) return;
+    digitalWrite(RELAY, HIGH);
+  }
+  etatLampe = !etatLampe;
 }
