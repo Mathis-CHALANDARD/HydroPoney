@@ -77,21 +77,15 @@ bool etatLampe = false;
 
 
 void setup() {
-  Serial.begin(9600);
   dhtCaptor.begin();
-  pinMode(LED_BUILTIN, OUTPUT);
 
   while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
-    operation(pending);
+    delay(3000);
   }
-  Serial.println("Connection wifi réussie");
-  operation(complete);
 
   while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
-    operation(pending);
+    delay(3000);
   }
-  operation(complete);
-  Serial.println("Connection mqtt réussie");
   mqttClient.onMessage(onMqttMessage);
   mqttClient.subscribe(MQTT_RECV);
   
@@ -107,16 +101,14 @@ void loop() {
   if (!mqttClient.connected()) {
     //No MQTT!
     while (WiFi.begin(WiFi_SSID, WiFi_PSWD) != WL_CONNECTED) {
-      operation(pending);
+    delay(3000);
     }
 
-    Serial.println("Reconnexion wifi réussie");
     while (!mqttClient.connect(MQTT_BRKR, MQTT_PORT)){
-      operation(pending);
+    delay(3000);
     }
     mqttClient.onMessage(onMqttMessage);
     mqttClient.subscribe(MQTT_RECV);
-    Serial.println("Reconnexion mqtt réussie");
   }
 
   mqttClient.poll();
@@ -174,8 +166,6 @@ void loop() {
 
     //Tester si le message à bien été envoyé
     millisPrecedent = millisActuel;
-    Serial.println("message sent");
-
     
     if(ecVal <= 0.6){
       pompeEc.write(vitessePompe);
@@ -200,39 +190,11 @@ void loop() {
   pompeActive = false;
 }
 
-void operation(OperationState state){
-  switch (state) {
-    case pending:
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(1000);
-      digitalWrite(LED_BUILTIN, LOW);
-      delay(1000);
-
-    case complete:
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(3000);
-      digitalWrite(LED_BUILTIN, LOW);
-      delay(3000);
-
-    case interrupted:
-      for(int i = 0; i < 10; i++){
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(500);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(500);
-      }
-  }
-}
 void onMqttMessage(int messageSize){
-  // we received a message, print out the topic and contents
-  Serial.println("Received a message with topic '");
-  Serial.print(mqttClient.messageTopic());
-  Serial.print("', length ");
-  Serial.print(messageSize);
-  Serial.println(" bytes:");
+  //Le buffer qui va contenir le message mqtt
   char ledOrder[64];
 
-  // use the Stream interface to print the contents
+  //On récupere le message
   int i = 0;
   while (mqttClient.available()) {
     ledOrder[i] = (char)mqttClient.read();
