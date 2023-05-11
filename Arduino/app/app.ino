@@ -43,7 +43,7 @@ MqttClient mqttClient(wifiClient);
 #pragma region MQTT_UTILS
 int millisPrecedent = 0;
 int millisActuel;
-int intervalle = 10000;
+int intervalle = 600000;
 #pragma endregion MQTT_UTILS
 
 #pragma region CAPTEURS_VAR
@@ -182,7 +182,6 @@ void loop() {
       delay(DELAIPOMPE);
       pompeEc.write(0);
     }
-
   }
 
   if(!pompeActive) return;
